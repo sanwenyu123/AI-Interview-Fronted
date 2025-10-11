@@ -1,0 +1,35 @@
+// 临时测试文件 - 验证所有图标是否存在
+import { 
+  SoundOutlined, 
+  RobotOutlined, 
+  UserOutlined,
+  ClockCircleOutlined,
+  CheckCircleOutlined,
+  PlayCircleOutlined,
+  PauseCircleOutlined,
+  StopOutlined,
+  AudioOutlined,
+  TrophyOutlined, 
+  StarOutlined,
+  MessageOutlined,
+  ReloadOutlined,
+  HomeOutlined,
+  HistoryOutlined,
+  EyeOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  CalendarOutlined,
+  SettingOutlined,
+  LogoutOutlined,
+  MenuOutlined,
+  SendOutlined,
+  LockOutlined,
+  LoginOutlined,
+  MailOutlined,
+  UserAddOutlined,
+  GlobalOutlined,
+  PlusOutlined,
+  SaveOutlined
+} from '@ant-design/icons';
+
+console.log('所有图标导入成功！');
