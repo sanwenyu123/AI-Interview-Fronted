@@ -38,7 +38,7 @@ function App() {
             {/* 公开路由 */}
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            
+
             {/* 受保护的路由 */}
             <Route path="/" element={
               <ProtectedRoute>
@@ -47,7 +47,7 @@ function App() {
                 </Layout>
               </ProtectedRoute>
             } />
-            
+
             <Route path="/settings" element={
               <ProtectedRoute>
                 <Layout>
@@ -55,7 +55,7 @@ function App() {
                 </Layout>
               </ProtectedRoute>
             } />
-            
+
             <Route path="/job-setup" element={
               <ProtectedRoute>
                 <Layout>
@@ -63,7 +63,7 @@ function App() {
                 </Layout>
               </ProtectedRoute>
             } />
-            
+
             <Route path="/text-interview" element={
               <ProtectedRoute>
                 <Layout>
@@ -71,7 +71,7 @@ function App() {
                 </Layout>
               </ProtectedRoute>
             } />
-            
+
             <Route path="/voice-interview" element={
               <ProtectedRoute>
                 <Layout>
@@ -79,7 +79,7 @@ function App() {
                 </Layout>
               </ProtectedRoute>
             } />
-            
+
             <Route path="/interview-result" element={
               <ProtectedRoute>
                 <Layout>
@@ -87,7 +87,7 @@ function App() {
                 </Layout>
               </ProtectedRoute>
             } />
-            
+
             <Route path="/interview-history" element={
               <ProtectedRoute>
                 <Layout>
@@ -95,7 +95,7 @@ function App() {
                 </Layout>
               </ProtectedRoute>
             } />
-            
+
             {/* 默认重定向 */}
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>

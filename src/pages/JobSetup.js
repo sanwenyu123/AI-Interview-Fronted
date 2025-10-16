@@ -1,27 +1,29 @@
 import React, { useState } from 'react';
-import { 
-  Card, 
-  Form, 
-  Input, 
-  Button, 
-  Typography, 
-  Space, 
-  message, 
-  Row, 
+import {
+  Card,
+  Form,
+  Input,
+  Button,
+  Typography,
+  Space,
+  message,
+  Row,
   Col,
   Select,
   Tag,
   Divider
 } from 'antd';
-import { 
-  EditOutlined, 
-  PlusOutlined, 
+import {
+  EditOutlined,
+  PlusOutlined,
   DeleteOutlined,
   SaveOutlined,
   PlayCircleOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import useStore from '../store/useStore';
+import interviewService from '../services/interviewService';
+import questionService from '../services/questionService';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -60,26 +62,49 @@ const JobSetup = () => {
   const onFinish = async (values) => {
     setLoading(true);
     try {
-      // 模拟保存岗位设置
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
+      // 创建面试记录
+      const interviewData = {
+        job_title: values.position,
+        job_description: values.description || '',
+        difficulty: values.difficulty,
+        interview_type: 'text', // 默认文字面试
+        language: values.interviewLanguage || language,
+      };
+
+      const interview = await interviewService.createInterview(interviewData);
+
+      // 生成面试问题
+      const questionData = {
+        interview_id: interview.id,
+        job_title: values.position,
+        job_description: values.description || '',
+        difficulty: values.difficulty,
+        language: values.interviewLanguage || language,
+        num_questions: 5, // 生成5个问题
+      };
+
+      await questionService.generateQuestions(questionData);
+
+      // 保存到全局状态
       const interviewConfig = {
+        id: interview.id,
         position: values.position,
         description: values.description || '',
         skills: values.skills || [],
         difficulty: values.difficulty,
         duration: values.duration || 30,
         language: values.interviewLanguage || language,
-        createdAt: new Date().toISOString(),
+        createdAt: interview.created_at,
       };
-      
+
       setCurrentInterview(interviewConfig);
-      message.success('岗位设置已保存！');
-      
+      message.success('岗位设置已保存，问题已生成！');
+
       // 跳转到面试选择页面
       navigate('/text-interview');
     } catch (error) {
-      message.error('保存失败，请重试');
+      console.error('保存失败:', error);
+      message.error(error.response?.data?.detail || '保存失败，请重试');
     } finally {
       setLoading(false);
     }
@@ -122,8 +147,8 @@ const JobSetup = () => {
                 label="岗位名称"
                 rules={[{ required: true, message: '请输入岗位名称!' }]}
               >
-                <Input 
-                  placeholder="例如：前端开发工程师" 
+                <Input
+                  placeholder="例如：前端开发工程师"
                   style={{ borderRadius: '8px' }}
                 />
               </Form.Item>
@@ -195,8 +220,8 @@ const JobSetup = () => {
                     label="面试语言"
                     initialValue={language}
                   >
-                    <Select 
-                      placeholder="选择面试语言" 
+                    <Select
+                      placeholder="选择面试语言"
                       style={{ borderRadius: '8px' }}
                       onChange={(value) => setLanguage(value)}
                     >
@@ -213,9 +238,9 @@ const JobSetup = () => {
 
               <Form.Item>
                 <Space>
-                  <Button 
-                    type="primary" 
-                    htmlType="submit" 
+                  <Button
+                    type="primary"
+                    htmlType="submit"
                     loading={loading}
                     icon={<SaveOutlined />}
                     size="large"
@@ -223,8 +248,8 @@ const JobSetup = () => {
                   >
                     保存设置
                   </Button>
-                  <Button 
-                    type="default" 
+                  <Button
+                    type="default"
                     htmlType="button"
                     onClick={() => form.resetFields()}
                     size="large"
@@ -244,15 +269,15 @@ const JobSetup = () => {
             <Text type="secondary" style={{ display: 'block', marginBottom: '16px' }}>
               选择预设模板快速开始
             </Text>
-            
+
             {jobTemplates.map((template, index) => (
               <Card
                 key={index}
                 size="small"
                 hoverable
                 onClick={() => handleTemplateSelect(template)}
-                style={{ 
-                  marginBottom: '12px', 
+                style={{
+                  marginBottom: '12px',
                   cursor: 'pointer',
                   borderRadius: '8px'
                 }}
@@ -288,8 +313,8 @@ const JobSetup = () => {
             根据您的需求选择文字面试或语音面试
           </Text>
           <Space size="large">
-            <Button 
-              type="primary" 
+            <Button
+              type="primary"
               size="large"
               icon={<EditOutlined />}
               onClick={() => navigate('/text-interview')}
@@ -297,8 +322,8 @@ const JobSetup = () => {
             >
               开始文字面试
             </Button>
-            <Button 
-              type="primary" 
+            <Button
+              type="primary"
               size="large"
               icon={<PlayCircleOutlined />}
               onClick={() => navigate('/voice-interview')}

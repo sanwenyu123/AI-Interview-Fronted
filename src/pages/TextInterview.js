@@ -1,27 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Card, 
-  Input, 
-  Button, 
-  Typography, 
-  Space, 
-  message, 
-  Row, 
+import {
+  Card,
+  Input,
+  Button,
+  Typography,
+  Space,
+  message,
+  Row,
   Col,
   Progress,
   Avatar,
   Divider,
   Spin
 } from 'antd';
-import { 
-  SendOutlined, 
-  RobotOutlined, 
+import {
+  SendOutlined,
+  RobotOutlined,
   UserOutlined,
   ClockCircleOutlined,
   CheckCircleOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import useStore from '../store/useStore';
+import questionService from '../services/questionService';
+import answerService from '../services/answerService';
+import interviewService from '../services/interviewService';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -32,11 +35,38 @@ const TextInterview = () => {
   const [loading, setLoading] = useState(false);
   const [interviewStarted, setInterviewStarted] = useState(false);
   const [currentQuestion, setCurrentQuestion] = useState(null);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [questionCount, setQuestionCount] = useState(0);
-  
+  const [questions, setQuestions] = useState([]);
+  const [loadingQuestions, setLoadingQuestions] = useState(true);
+
   const navigate = useNavigate();
   const { currentInterview, addInterviewRecord } = useStore();
+
+  // 加载面试问题
+  useEffect(() => {
+    const loadQuestions = async () => {
+      if (!currentInterview?.id) {
+        message.error('请先设置面试岗位');
+        navigate('/job-setup');
+        return;
+      }
+
+      try {
+        setLoadingQuestions(true);
+        const questionsData = await questionService.getQuestionsByInterview(currentInterview.id);
+        setQuestions(questionsData || []);
+      } catch (error) {
+        console.error('加载问题失败:', error);
+        message.error('加载问题失败，请重试');
+      } finally {
+        setLoadingQuestions(false);
+      }
+    };
+
+    loadQuestions();
+  }, [currentInterview, navigate]);
 
   // 根据语言设置面试问题
   const getInterviewQuestions = (language) => {
@@ -126,8 +156,7 @@ const TextInterview = () => {
     return () => clearInterval(interval);
   }, [interviewStarted]);
 
-  const startInterview = () => {
-    const interviewQuestions = getInterviewQuestions(currentInterview.language || 'zh-CN');
+  const startInterview = async () => {
     const welcomeMessages = {
       'zh-CN': `您好！欢迎参加${currentInterview.position}的面试。我是您的AI面试官，接下来我会问您一些问题，请认真回答。面试预计${currentInterview.duration}分钟，准备好了吗？`,
       'zh-TW': `您好！歡迎參加${currentInterview.position}的面試。我是您的AI面試官，接下來我會問您一些問題，請認真回答。面試預計${currentInterview.duration}分鐘，準備好了嗎？`,
@@ -136,31 +165,38 @@ const TextInterview = () => {
       'ja-JP': `こんにちは！${currentInterview.position}の面接へようこそ。私はあなたのAI面接官です。いくつか質問をさせていただきますので、真剣にお答えください。面接は${currentInterview.duration}分程度を予定しています。準備はよろしいですか？`,
       'ko-KR': `안녕하세요! ${currentInterview.position} 면접에 오신 것을 환영합니다. 저는 당신의 AI 면접관입니다. 몇 가지 질문을 드릴 예정이니 진지하게 답변해 주세요. 면접은 ${currentInterview.duration}분 정도 예상됩니다. 준비되셨나요?`
     };
-    
+
     const welcomeMessage = {
       id: Date.now(),
       type: 'ai',
       content: welcomeMessages[currentInterview.language || 'zh-CN'] || welcomeMessages['zh-CN'],
       timestamp: new Date().toISOString()
     };
-    
+
     setMessages([welcomeMessage]);
     setInterviewStarted(true);
+
+    // 开始面试
+    try {
+      await interviewService.startInterview(currentInterview.id);
+    } catch (error) {
+      console.error('开始面试失败:', error);
+    }
   };
 
   const askNextQuestion = () => {
-    const interviewQuestions = getInterviewQuestions(currentInterview.language || 'zh-CN');
-    if (questionCount < interviewQuestions.length) {
-      const question = interviewQuestions[questionCount];
+    if (currentQuestionIndex < questions.length) {
+      const question = questions[currentQuestionIndex];
       const questionMessage = {
         id: Date.now(),
         type: 'ai',
-        content: question,
+        content: question.question_text,
         timestamp: new Date().toISOString()
       };
-      
+
       setMessages(prev => [...prev, questionMessage]);
       setCurrentQuestion(question);
+      setCurrentQuestionIndex(prev => prev + 1);
       setQuestionCount(prev => prev + 1);
     } else {
       // 面试结束
@@ -168,7 +204,7 @@ const TextInterview = () => {
     }
   };
 
-  const endInterview = () => {
+  const endInterview = async () => {
     const endMessages = {
       'zh-CN': '感谢您参加本次面试！面试已结束，我们会对您的表现进行评估。',
       'zh-TW': '感謝您參加本次面試！面試已結束，我們會對您的表現進行評估。',
@@ -177,58 +213,83 @@ const TextInterview = () => {
       'ja-JP': '今回の面接にご参加いただき、ありがとうございました！面接は終了いたしました。あなたのパフォーマンスを評価いたします。',
       'ko-KR': '이번 면접에 참여해 주셔서 감사합니다! 면접이 종료되었습니다. 귀하의 성과를 평가하겠습니다.'
     };
-    
+
     const endMessage = {
       id: Date.now(),
       type: 'ai',
       content: endMessages[currentInterview.language || 'zh-CN'] || endMessages['zh-CN'],
       timestamp: new Date().toISOString()
     };
-    
+
     setMessages(prev => [...prev, endMessage]);
     setInterviewStarted(false);
-    
-    // 保存面试记录
-    const interviewRecord = {
-      id: Date.now(),
-      position: currentInterview.position,
-      type: 'text',
-      duration: timeElapsed,
-      questions: questionCount,
-      messages: messages,
-      score: Math.floor(Math.random() * 30) + 70, // 模拟评分
-      date: new Date().toISOString(),
-      status: 'completed',
-      language: currentInterview.language || 'zh-CN'
-    };
-    
-    addInterviewRecord(interviewRecord);
-    
-    // 跳转到结果页面
-    setTimeout(() => {
-      navigate('/interview-result', { state: { record: interviewRecord } });
-    }, 2000);
+
+    try {
+      // 完成面试
+      await interviewService.completeInterview(currentInterview.id, {
+        duration: timeElapsed,
+      });
+
+      // 保存面试记录到本地状态
+      const interviewRecord = {
+        id: currentInterview.id,
+        position: currentInterview.position,
+        type: 'text',
+        duration: timeElapsed,
+        questions: questionCount,
+        messages: messages,
+        score: Math.floor(Math.random() * 30) + 70, // 模拟评分
+        date: new Date().toISOString(),
+        status: 'completed',
+        language: currentInterview.language || 'zh-CN'
+      };
+
+      addInterviewRecord(interviewRecord);
+
+      // 跳转到结果页面
+      setTimeout(() => {
+        navigate('/interview-result', { state: { record: interviewRecord } });
+      }, 2000);
+    } catch (error) {
+      console.error('完成面试失败:', error);
+      message.error('面试结束失败，请重试');
+    }
   };
 
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return;
-    
+
     const userMessage = {
       id: Date.now(),
       type: 'user',
       content: inputValue,
       timestamp: new Date().toISOString()
     };
-    
+
     setMessages(prev => [...prev, userMessage]);
+    const answerText = inputValue;
     setInputValue('');
     setLoading(true);
-    
-    // 模拟AI处理时间
-    setTimeout(() => {
+
+    try {
+      // 保存答案到后端
+      if (currentQuestion) {
+        await answerService.createAnswer({
+          question_id: currentQuestion.id,
+          answer_text: answerText,
+        });
+      }
+
+      // 继续下一个问题
+      setTimeout(() => {
+        setLoading(false);
+        askNextQuestion();
+      }, 1000);
+    } catch (error) {
+      console.error('保存答案失败:', error);
       setLoading(false);
       askNextQuestion();
-    }, 1000);
+    }
   };
 
   const formatTime = (seconds) => {
@@ -243,6 +304,17 @@ const TextInterview = () => {
         <Spin size="large" />
         <div style={{ marginTop: '16px' }}>
           <Text>正在加载面试信息...</Text>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadingQuestions) {
+    return (
+      <div style={{ textAlign: 'center', padding: '50px' }}>
+        <Spin size="large" />
+        <div style={{ marginTop: '16px' }}>
+          <Text>正在加载面试问题...</Text>
         </div>
       </div>
     );
@@ -298,8 +370,8 @@ const TextInterview = () => {
             </Space>
           </Col>
           <Col flex="auto">
-            <Progress 
-              percent={Math.round((questionCount / getInterviewQuestions(currentInterview.language || 'zh-CN').length) * 100)} 
+            <Progress
+              percent={Math.round((questionCount / getInterviewQuestions(currentInterview.language || 'zh-CN').length) * 100)}
               size="small"
               status={interviewStarted ? 'active' : 'normal'}
             />
@@ -308,51 +380,51 @@ const TextInterview = () => {
       </Card>
 
       {/* 对话区域 */}
-      <Card 
+      <Card
         title={currentInterview.language === 'en-US' || currentInterview.language === 'en-GB' ? 'Interview Conversation' :
                currentInterview.language === 'ja-JP' ? '面接会話' :
                currentInterview.language === 'ko-KR' ? '면접 대화' :
                '面试对话'}
-        style={{ 
-          marginBottom: '16px', 
+        style={{
+          marginBottom: '16px',
           borderRadius: '12px',
           height: '500px',
           display: 'flex',
           flexDirection: 'column'
         }}
-        styles={{ 
+        styles={{
           body: {
-            flex: 1, 
-            display: 'flex', 
+            flex: 1,
+            display: 'flex',
             flexDirection: 'column',
             padding: '16px'
           }
         }}
       >
-        <div style={{ 
-          flex: 1, 
-          overflowY: 'auto', 
+        <div style={{
+          flex: 1,
+          overflowY: 'auto',
           marginBottom: '16px',
           padding: '0 8px'
         }}>
           {messages.map((message) => (
             <div key={message.id} style={{ marginBottom: '16px' }}>
-              <div style={{ 
-                display: 'flex', 
+              <div style={{
+                display: 'flex',
                 alignItems: 'flex-start',
                 justifyContent: message.type === 'user' ? 'flex-end' : 'flex-start'
               }}>
                 {message.type === 'ai' && (
-                  <Avatar 
-                    icon={<RobotOutlined />} 
-                    style={{ 
+                  <Avatar
+                    icon={<RobotOutlined />}
+                    style={{
                       backgroundColor: '#1890ff',
                       marginRight: '8px',
                       marginTop: '4px'
-                    }} 
+                    }}
                   />
                 )}
-                
+
                 <div style={{
                   maxWidth: '70%',
                   backgroundColor: message.type === 'user' ? '#1890ff' : '#f0f0f0',
@@ -362,37 +434,37 @@ const TextInterview = () => {
                   wordBreak: 'break-word'
                 }}>
                   <div>{message.content}</div>
-                  <div style={{ 
-                    fontSize: '12px', 
+                  <div style={{
+                    fontSize: '12px',
                     opacity: 0.7,
                     marginTop: '4px'
                   }}>
                     {new Date(message.timestamp).toLocaleTimeString()}
                   </div>
                 </div>
-                
+
                 {message.type === 'user' && (
-                  <Avatar 
-                    icon={<UserOutlined />} 
-                    style={{ 
+                  <Avatar
+                    icon={<UserOutlined />}
+                    style={{
                       backgroundColor: '#52c41a',
                       marginLeft: '8px',
                       marginTop: '4px'
-                    }} 
+                    }}
                   />
                 )}
               </div>
             </div>
           ))}
-          
+
           {loading && (
             <div style={{ display: 'flex', alignItems: 'center' }}>
-              <Avatar 
-                icon={<RobotOutlined />} 
-                style={{ 
+              <Avatar
+                icon={<RobotOutlined />}
+                style={{
                   backgroundColor: '#1890ff',
                   marginRight: '8px'
-                }} 
+                }}
               />
               <div style={{
                 backgroundColor: '#f0f0f0',

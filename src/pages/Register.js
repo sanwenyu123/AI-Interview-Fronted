@@ -3,6 +3,7 @@ import { Form, Input, Button, Card, Typography, message, Space } from 'antd';
 import { UserOutlined, LockOutlined, MailOutlined, UserAddOutlined } from '@ant-design/icons';
 import { Link, useNavigate } from 'react-router-dom';
 import useStore from '../store/useStore';
+import authService from '../services/authService';
 
 const { Title, Text } = Typography;
 
@@ -19,22 +20,17 @@ const Register = () => {
 
     setLoading(true);
     try {
-      // 模拟注册API调用
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // 模拟成功注册
-      const user = {
-        id: Date.now(),
+      // 调用注册 API
+      const response = await authService.register({
         username: values.username,
         email: values.email,
-        avatar: null,
-      };
-      
-      setUser(user);
-      message.success('注册成功！');
-      navigate('/');
+        password: values.password,
+      });
+
+      message.success('注册成功！请登录');
+      navigate('/login');
     } catch (error) {
-      message.error('注册失败，请重试');
+      message.error(error.response?.data?.detail || '注册失败，请重试');
     } finally {
       setLoading(false);
     }

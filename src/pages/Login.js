@@ -1,37 +1,56 @@
 import React, { useState } from 'react';
-import { Form, Input, Button, Card, Typography, message, Space } from 'antd';
-import { UserOutlined, LockOutlined, LoginOutlined } from '@ant-design/icons';
+import { Form, Input, Button, Card, Typography, message, Space, Modal } from 'antd';
+import { UserOutlined, LockOutlined, LoginOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { Link, useNavigate } from 'react-router-dom';
 import useStore from '../store/useStore';
+import authService from '../services/authService';
 
 const { Title, Text } = Typography;
 
 const Login = () => {
   const [loading, setLoading] = useState(false);
+  const [errorModalVisible, setErrorModalVisible] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [errorDetails, setErrorDetails] = useState('');
   const navigate = useNavigate();
   const { setUser } = useStore();
 
   const onFinish = async (values) => {
     setLoading(true);
+
     try {
-      // 模拟登录API调用
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // 模拟成功登录
-      const user = {
-        id: 1,
+      // 调用登录 API
+      const response = await authService.login({
         username: values.username,
-        email: `${values.username}@example.com`,
-        avatar: null,
-      };
-      
-      setUser(user);
+        password: values.password,
+      });
+
+      // 设置用户信息到全局状态
+      setUser(response.user);
+
+      setLoading(false);
       message.success('登录成功！');
       navigate('/');
     } catch (error) {
-      message.error('登录失败，请重试');
-    } finally {
+
+      // 获取错误信息
+      let errorMsg = '登录失败，请重试';
+      let details = '';
+
+      if (error.response?.data?.detail) {
+        errorMsg = error.response.data.detail;
+      } else if (error.response?.status === 401) {
+        errorMsg = '用户名或密码错误';
+      } else if (error.response?.status === 404) {
+        errorMsg = '服务器连接失败，请检查后端服务是否启动';
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+
+      // 设置错误信息并显示 Modal
+      setErrorMessage(errorMsg);
       setLoading(false);
+      setErrorModalVisible(true);
     }
   };
 
@@ -77,7 +96,7 @@ const Login = () => {
         <Form
           name="login"
           onFinish={onFinish}
-          autoComplete="off"
+          autoComplete="new-password"
           size="large"
         >
           <Form.Item
@@ -91,6 +110,7 @@ const Login = () => {
               prefix={<UserOutlined />}
               placeholder="用户名"
               style={{ borderRadius: '8px' }}
+              autoComplete="off"
             />
           </Form.Item>
 
@@ -105,6 +125,7 @@ const Login = () => {
               prefix={<LockOutlined />}
               placeholder="密码"
               style={{ borderRadius: '8px' }}
+              autoComplete="new-password"
             />
           </Form.Item>
 
@@ -136,7 +157,59 @@ const Login = () => {
             </Link>
           </Space>
         </div>
+
       </Card>
+
+      {/* 错误提示 Modal */}
+      <Modal
+        title={
+          <span style={{ color: '#ff4d4f' }}>
+            <ExclamationCircleOutlined style={{ marginRight: 8 }} />
+            登录失败
+          </span>
+        }
+        open={errorModalVisible}
+        onOk={() => {
+          setErrorModalVisible(false);
+          setLoading(false);
+        }}
+        onCancel={() => {
+          setErrorModalVisible(false);
+          setLoading(false);
+        }}
+        okText="我知道了"
+        cancelButtonProps={{ style: { display: 'none' } }}
+        maskClosable={false}
+        keyboard={false}
+        centered
+        width={500}
+        zIndex={99999}
+      >
+        <div style={{ padding: '20px 0' }}>
+          <p style={{
+            fontSize: '18px',
+            marginBottom: '16px',
+            color: '#ff4d4f',
+            fontWeight: 500
+          }}>
+            {errorMessage}
+          </p>
+          {errorDetails && (
+            <div style={{
+              marginTop: '16px',
+              padding: '12px',
+              background: '#f5f5f5',
+              borderRadius: '6px',
+              fontSize: '13px',
+              color: '#666'
+            }}>
+              <div style={{ whiteSpace: 'pre-line', marginBottom: '8px' }}>
+                {errorDetails}
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 };

@@ -1,9 +1,9 @@
-import React from 'react';
-import { Row, Col, Card, Typography, Button, Space, Statistic, Progress } from 'antd';
-import { 
-  PlayCircleOutlined, 
-  EditOutlined, 
-  SoundOutlined, 
+import React, { useEffect, useState } from 'react';
+import { Row, Col, Card, Typography, Button, Space, Statistic, Progress, Spin } from 'antd';
+import {
+  PlayCircleOutlined,
+  EditOutlined,
+  SoundOutlined,
   HistoryOutlined,
   TrophyOutlined,
   ClockCircleOutlined,
@@ -11,24 +11,61 @@ import {
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import useStore from '../store/useStore';
+import interviewService from '../services/interviewService';
 
 const { Title, Text } = Typography;
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const { user, interviewHistory } = useStore();
+  const { user } = useStore();
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({
+    totalInterviews: 0,
+    completedInterviews: 0,
+    averageScore: 0,
+    totalTime: 0,
+  });
+  const [recentInterviews, setRecentInterviews] = useState([]);
 
-  // 模拟统计数据
-  const stats = {
-    totalInterviews: interviewHistory.length,
-    completedInterviews: interviewHistory.filter(item => item.status === 'completed').length,
-    averageScore: interviewHistory.length > 0 
-      ? Math.round(interviewHistory.reduce((sum, item) => sum + (item.score || 0), 0) / interviewHistory.length)
-      : 0,
-    totalTime: interviewHistory.reduce((sum, item) => sum + (item.duration || 0), 0),
-  };
+  // 从后端加载统计数据和最近面试
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      try {
+        setLoading(true);
 
-  const recentInterviews = interviewHistory.slice(-3).reverse();
+        // 获取统计数据
+        const statsData = await interviewService.getStatistics();
+        setStats({
+          totalInterviews: statsData.total_interviews || 0,
+          completedInterviews: statsData.completed_interviews || 0,
+          averageScore: statsData.average_score || 0,
+          totalTime: statsData.total_duration || 0,
+        });
+
+        // 获取最近面试记录
+        const interviewsData = await interviewService.getInterviews({
+          limit: 3,
+          sort: 'created_at',
+          order: 'desc'
+        });
+        setRecentInterviews(interviewsData || []);
+      } catch (error) {
+        console.error('加载数据失败:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadDashboardData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div style={{ textAlign: 'center', padding: '100px 0' }}>
+        <Spin size="large" tip="加载中..." />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -55,7 +92,7 @@ const Dashboard = () => {
             <Text type="secondary">设置面试岗位和描述</Text>
           </Card>
         </Col>
-        
+
         <Col xs={24} sm={12} lg={6}>
           <Card
             hoverable
@@ -68,7 +105,7 @@ const Dashboard = () => {
             <Text type="secondary">通过文字进行面试练习</Text>
           </Card>
         </Col>
-        
+
         <Col xs={24} sm={12} lg={6}>
           <Card
             hoverable
@@ -81,7 +118,7 @@ const Dashboard = () => {
             <Text type="secondary">真实语音对话面试</Text>
           </Card>
         </Col>
-        
+
         <Col xs={24} sm={12} lg={6}>
           <Card
             hoverable
@@ -142,8 +179,8 @@ const Dashboard = () => {
             {recentInterviews.length > 0 ? (
               <div>
                 {recentInterviews.map((interview, index) => (
-                  <div key={index} style={{ 
-                    padding: '12px 0', 
+                  <div key={index} style={{
+                    padding: '12px 0',
                     borderBottom: index < recentInterviews.length - 1 ? '1px solid #f0f0f0' : 'none'
                   }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -173,8 +210,8 @@ const Dashboard = () => {
               <div style={{ textAlign: 'center', padding: '40px 0' }}>
                 <Text type="secondary">还没有面试记录</Text>
                 <br />
-                <Button 
-                  type="primary" 
+                <Button
+                  type="primary"
                   onClick={() => navigate('/job-setup')}
                   style={{ marginTop: '16px' }}
                 >
@@ -187,8 +224,8 @@ const Dashboard = () => {
       </Row>
 
       {/* 快速开始按钮 */}
-      <div style={{ 
-        textAlign: 'center', 
+      <div style={{
+        textAlign: 'center',
         marginTop: '32px',
         padding: '24px',
         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -202,26 +239,26 @@ const Dashboard = () => {
           选择您喜欢的面试方式，开始您的AI面试之旅
         </Text>
         <Space size="large">
-          <Button 
-            type="primary" 
+          <Button
+            type="primary"
             size="large"
             icon={<EditOutlined />}
             onClick={() => navigate('/text-interview')}
-            style={{ 
-              background: 'rgba(255,255,255,0.2)', 
+            style={{
+              background: 'rgba(255,255,255,0.2)',
               border: '1px solid rgba(255,255,255,0.3)',
               color: 'white'
             }}
           >
             文字面试
           </Button>
-          <Button 
-            type="primary" 
+          <Button
+            type="primary"
             size="large"
             icon={<SoundOutlined />}
             onClick={() => navigate('/voice-interview')}
-            style={{ 
-              background: 'rgba(255,255,255,0.2)', 
+            style={{
+              background: 'rgba(255,255,255,0.2)',
               border: '1px solid rgba(255,255,255,0.3)',
               color: 'white'
             }}
