@@ -64,11 +64,14 @@ const JobSetup = () => {
     try {
       // 创建面试记录
       const interviewData = {
-        job_title: values.position,
-        job_description: values.description || '',
+        // 与后端 InterviewCreate 保持一致
+        position: values.position,
+        description: values.description || '',
+        skills: values.skills || [],
         difficulty: values.difficulty,
-        interview_type: 'text', // 默认文字面试
+        duration: values.duration || 30,
         language: values.interviewLanguage || language,
+        type: 'text',
       };
 
       const interview = await interviewService.createInterview(interviewData);
@@ -76,11 +79,7 @@ const JobSetup = () => {
       // 生成面试问题
       const questionData = {
         interview_id: interview.id,
-        job_title: values.position,
-        job_description: values.description || '',
-        difficulty: values.difficulty,
-        language: values.interviewLanguage || language,
-        num_questions: 5, // 生成5个问题
+        num_questions: 5,
       };
 
       await questionService.generateQuestions(questionData);
@@ -104,7 +103,11 @@ const JobSetup = () => {
       navigate('/text-interview');
     } catch (error) {
       console.error('保存失败:', error);
-      message.error(error.response?.data?.detail || '保存失败，请重试');
+      const detail = error?.response?.data?.detail;
+      const errMsg = Array.isArray(detail)
+        ? detail.map((e) => e?.msg).join('; ')
+        : (typeof detail === 'string' ? detail : '保存失败，请重试');
+      message.error(errMsg);
     } finally {
       setLoading(false);
     }

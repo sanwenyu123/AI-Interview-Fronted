@@ -26,6 +26,9 @@ import {
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import useStore from '../store/useStore';
+import answerService from '../services/answerService';
+import questionService from '../services/questionService';
+import evaluationService from '../services/evaluationService';
 
 const { Title, Text } = Typography;
 
@@ -44,6 +47,16 @@ const VoiceInterview = () => {
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const recognitionRef = useRef(null);
+  const consoleScrollRef = useRef(null);
+  const silenceTimerRef = useRef(null);
+  const recognitionStateRef = useRef('idle'); // idle | starting | running | stopping
+  const [recognizedText, setRecognizedText] = useState('');
+  const [asrAvailable, setAsrAvailable] = useState(true);
+  const recognizedTextRef = useRef('');
+  const [answers, setAnswers] = useState([]);
+  const questionIndexRef = useRef(0);
+  const questionsRef = useRef([]); // 后端题目缓存
+  const currentQuestionIdRef = useRef(null);
 
   // 根据语言设置面试问题
   const getInterviewQuestions = (language) => {
@@ -114,7 +127,10 @@ const VoiceInterview = () => {
 
   useEffect(() => {
     if (!currentInterview) {
-      message.warning('请先设置面试岗位信息');
+      if (!sessionStorage.getItem('setup_tip_shown')) {
+        message.warning('请先设置面试岗位信息');
+        sessionStorage.setItem('setup_tip_shown', '1');
+      }
       navigate('/job-setup');
       return;
     }
@@ -130,6 +146,14 @@ const VoiceInterview = () => {
     return () => clearInterval(interval);
   }, [interviewStarted]);
 
+  // 自动滚动到最新状态/问题
+  useEffect(() => {
+    const el = consoleScrollRef.current;
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    }
+  }, [questionCount, currentQuestion, isPlaying, isListening, interviewStarted]);
+
   const initSpeechRecognition = () => {
     if (!currentInterview) {
       console.warn('面试配置未加载');
@@ -140,21 +164,34 @@ const VoiceInterview = () => {
       try {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         recognitionRef.current = new SpeechRecognition();
-        recognitionRef.current.continuous = false; // 改为false，避免持续监听
+        recognitionRef.current.continuous = true; // 持续监听，由我们控制停止时机
         recognitionRef.current.interimResults = true;
         recognitionRef.current.lang = currentInterview.language || 'zh-CN';
         recognitionRef.current.maxAlternatives = 1;
 
+        recognitionRef.current.onstart = () => {
+          recognitionStateRef.current = 'running';
+          recognizedTextRef.current = '';
+          setRecognizedText('');
+        };
+
         recognitionRef.current.onresult = (event) => {
           let finalTranscript = '';
+          let interimTranscript = '';
           for (let i = event.resultIndex; i < event.results.length; i++) {
             if (event.results[i].isFinal) {
               finalTranscript += event.results[i][0].transcript;
+            } else {
+              interimTranscript += event.results[i][0].transcript;
             }
           }
+          // 仅累积识别文本，不推进问题
           if (finalTranscript) {
-            console.log('识别到的文本:', finalTranscript);
-            handleVoiceInput(finalTranscript);
+            const merged = `${(recognizedTextRef.current || '').trim()} ${finalTranscript}`.trim();
+            recognizedTextRef.current = merged;
+            setRecognizedText(merged);
+          } else if (interimTranscript) {
+            setRecognizedText(`${(recognizedTextRef.current || '').trim()} ${interimTranscript}`.trim());
           }
         };
 
@@ -162,6 +199,7 @@ const VoiceInterview = () => {
           console.error('语音识别错误:', event.error);
           setIsListening(false);
           setIsRecording(false);
+          recognitionStateRef.current = 'idle';
           
           const errorMessages = {
             'no-speech': '未检测到语音，请重试',
@@ -180,6 +218,15 @@ const VoiceInterview = () => {
           console.log('语音识别结束');
           setIsListening(false);
           setIsRecording(false);
+          recognitionStateRef.current = 'idle';
+          if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+          // 手动停止后统一在这里提交
+          const text = (recognizedTextRef.current || '').trim();
+          if (text) {
+            handleVoiceInput(text);
+          } else {
+            message.warning('未检测到语音，请靠近麦克风后重试');
+          }
         };
 
         return true;
@@ -198,7 +245,7 @@ const VoiceInterview = () => {
     setShowPermissionModal(true);
   };
 
-  const handlePermissionGranted = () => {
+  const handlePermissionGranted = async () => {
     setShowPermissionModal(false);
     
     // 初始化语音识别
@@ -208,6 +255,26 @@ const VoiceInterview = () => {
       return;
     }
     
+    // 重置进度与答案
+    questionIndexRef.current = 0;
+    setQuestionCount(0);
+    setCurrentQuestion(null);
+    setAnswers([]);
+    questionsRef.current = [];
+    currentQuestionIdRef.current = null;
+
+    // 预取问题（从后端）
+    try {
+      if (currentInterview?.id) {
+        const list = await questionService.getQuestionsByInterview(currentInterview.id);
+        if (Array.isArray(list)) {
+          questionsRef.current = list; // [{id, question_text, question_order, ...}]
+        }
+      }
+    } catch (e) {
+      console.warn('预取问题失败，不影响本地流程', e);
+    }
+
     const welcomeMessages = {
       'zh-CN': `您好！欢迎参加${currentInterview.position}的语音面试。我是您的AI面试官，接下来我会问您一些问题，请用语音回答。面试预计${currentInterview.duration}分钟，准备好了吗？`,
       'zh-TW': `您好！歡迎參加${currentInterview.position}的語音面試。我是您的AI面試官，接下來我會問您一些問題，請用語音回答。面試預計${currentInterview.duration}分鐘，準備好了嗎？`,
@@ -232,7 +299,8 @@ const VoiceInterview = () => {
       utterance.onstart = () => setIsPlaying(true);
       utterance.onend = () => {
         setIsPlaying(false);
-        if (interviewStarted && questionCount < getInterviewQuestions(currentInterview.language || 'zh-CN').length) {
+        // 仅当播放欢迎语（当前还没有题目）时，进入第一个问题
+        if (interviewStarted && !currentQuestion) {
           askNextQuestion();
         }
       };
@@ -243,10 +311,19 @@ const VoiceInterview = () => {
 
   const askNextQuestion = () => {
     const interviewQuestions = getInterviewQuestions(currentInterview.language || 'zh-CN');
-    if (questionCount < interviewQuestions.length) {
-      const question = interviewQuestions[questionCount];
+    const index = questionIndexRef.current;
+    if (index < interviewQuestions.length) {
+      const question = interviewQuestions[index];
+      questionIndexRef.current = index + 1;
       setCurrentQuestion(question);
-      setQuestionCount(prev => prev + 1);
+      setQuestionCount(questionIndexRef.current);
+      // 绑定当前题目的 question_id（如果已从后端获取）
+      if (questionsRef.current.length) {
+        const match = questionsRef.current.find(q => q.question_order === questionIndexRef.current);
+        currentQuestionIdRef.current = match ? match.id : null;
+      } else {
+        currentQuestionIdRef.current = null;
+      }
       speakText(question);
     } else {
       endInterview();
@@ -282,6 +359,17 @@ const VoiceInterview = () => {
     
     addInterviewRecord(interviewRecord);
     
+    // 最后一题后生成 AI 评价
+    (async () => {
+      try {
+        if (currentInterview?.id) {
+          await evaluationService.generateEvaluationByInterview(currentInterview.id);
+        }
+      } catch (e) {
+        console.error('生成评价失败:', e);
+      }
+    })();
+
     // 跳转到结果页面
     setTimeout(() => {
       navigate('/interview-result', { state: { record: interviewRecord } });
@@ -289,6 +377,14 @@ const VoiceInterview = () => {
   };
 
   const startRecording = () => {
+    if (recognitionStateRef.current === 'starting' || recognitionStateRef.current === 'running') {
+      message.warning('语音识别已在运行中');
+      return;
+    }
+    if (recognitionStateRef.current === 'stopping') {
+      setTimeout(startRecording, 200);
+      return;
+    }
     if (!recognitionRef.current) {
       message.error('语音识别不可用，请重新开始面试');
       // 尝试重新初始化
@@ -301,6 +397,7 @@ const VoiceInterview = () => {
     try {
       // 确保之前的识别已停止
       try {
+        recognitionStateRef.current = 'stopping';
         recognitionRef.current.stop();
       } catch (e) {
         // 忽略停止错误
@@ -309,6 +406,7 @@ const VoiceInterview = () => {
       // 延迟启动，确保之前的识别已完全停止
       setTimeout(() => {
         try {
+          recognitionStateRef.current = 'starting';
           recognitionRef.current.start();
           setIsListening(true);
           setIsRecording(true);
@@ -316,46 +414,89 @@ const VoiceInterview = () => {
           message.success('开始录音，请说话...');
         } catch (error) {
           console.error('启动录音失败:', error);
-          if (error.message.includes('already started')) {
+          if (error.message && error.message.includes('already started')) {
             message.warning('语音识别已在运行中');
           } else {
             message.error('启动录音失败，请重试');
           }
           setIsListening(false);
           setIsRecording(false);
+          recognitionStateRef.current = 'idle';
         }
-      }, 100);
+      }, 200);
     } catch (error) {
       console.error('录音准备失败:', error);
       message.error('录音准备失败');
       setIsListening(false);
       setIsRecording(false);
+      recognitionStateRef.current = 'idle';
     }
   };
 
   const stopRecording = () => {
     try {
       if (recognitionRef.current) {
+        recognitionStateRef.current = 'stopping';
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
         recognitionRef.current.stop();
       }
       setIsListening(false);
       setIsRecording(false);
       console.log('录音已停止');
-      message.info('录音已停止');
+      message.info('录音已停止，正在提交答案...');
     } catch (error) {
       console.error('停止录音失败:', error);
       setIsListening(false);
       setIsRecording(false);
+      recognitionStateRef.current = 'idle';
     }
   };
 
-  const handleVoiceInput = (transcript) => {
+  const handleVoiceInput = async (transcript) => {
     console.log('识别到的语音:', transcript);
-    // 这里可以处理识别到的语音文本
-    // 模拟AI处理
+    // 保存本题答案（若当前无题，则忽略）
+    if (currentQuestion) {
+      setAnswers(prev => ([...prev, { question: currentQuestion, answer: transcript }]));
+      // 异步提交到后端
+      try {
+        if (currentInterview?.id) {
+          // 优先使用缓存的当前题ID
+          let questionId = currentQuestionIdRef.current;
+          if (!questionId) {
+            const list = await questionService.getQuestionsByInterview(currentInterview.id);
+            if (Array.isArray(list)) {
+              questionsRef.current = list;
+              const idx = questionIndexRef.current - 1; // 当前题序从1开始
+              if (list[idx]) questionId = list[idx].id;
+            }
+          }
+
+          if (questionId) {
+            await answerService.createAnswer({
+              question_id: questionId,
+              answer_text: transcript,
+              answer_type: 'voice',
+              audio_url: null,
+              duration: null,
+            });
+          } else {
+            console.warn('未找到对应的 question_id，答案未提交');
+          }
+        }
+      } catch (e) {
+        console.error('提交答案失败:', e);
+        message.error('提交答案失败，但不影响继续下一题');
+      }
+    }
+    // 清空显示中的临时文本
+    recognizedTextRef.current = '';
+    setRecognizedText('');
+    // 清空当前题，避免 TTS 结束时的自动推进误触发
+    setCurrentQuestion(null);
+    // 进入下一题
     setTimeout(() => {
       askNextQuestion();
-    }, 1000);
+    }, 600);
   };
 
   const formatTime = (seconds) => {
@@ -446,7 +587,7 @@ const VoiceInterview = () => {
           textAlign: 'center'
         }}
       >
-        <div style={{ marginBottom: '24px' }}>
+        <div ref={consoleScrollRef} style={{ marginBottom: '24px', maxHeight: '420px', overflowY: 'auto', padding: '8px' }}>
           <Avatar 
             size={120}
             icon={<RobotOutlined />} 
@@ -620,3 +761,4 @@ const VoiceInterview = () => {
 };
 
 export default VoiceInterview;
+

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Card,
   Input,
@@ -43,12 +43,28 @@ const TextInterview = () => {
 
   const navigate = useNavigate();
   const { currentInterview, addInterviewRecord } = useStore();
+  const showSetupTipOnce = () => {
+    const key = 'setup_tip_shown';
+    if (!sessionStorage.getItem(key)) {
+      message.warning('请先设置面试岗位信息');
+      sessionStorage.setItem(key, '1');
+    }
+  };
+  const messagesListRef = useRef(null);
+
+  // 自动滚动到最新消息
+  useEffect(() => {
+    const container = messagesListRef.current;
+    if (container) {
+      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+    }
+  }, [messages]);
 
   // 加载面试问题
   useEffect(() => {
     const loadQuestions = async () => {
       if (!currentInterview?.id) {
-        message.error('请先设置面试岗位');
+        showSetupTipOnce();
         navigate('/job-setup');
         return;
       }
@@ -137,7 +153,7 @@ const TextInterview = () => {
 
   useEffect(() => {
     if (!currentInterview) {
-      message.warning('请先设置面试岗位信息');
+      showSetupTipOnce();
       navigate('/job-setup');
       return;
     }
@@ -401,7 +417,7 @@ const TextInterview = () => {
           }
         }}
       >
-        <div style={{
+        <div ref={messagesListRef} style={{
           flex: 1,
           overflowY: 'auto',
           marginBottom: '16px',

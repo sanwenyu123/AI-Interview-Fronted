@@ -23,6 +23,16 @@ const evaluationService = {
     }
   },
 
+  // 按面试ID生成 AI 评价（与后端路由一致）
+  generateEvaluationByInterview: async (interviewId) => {
+    try {
+      const response = await request.post(`${API_ENDPOINTS.EVALUATIONS.GENERATE}/${interviewId}`);
+      return response;
+    } catch (error) {
+      throw error;
+    }
+  },
+
   // 根据面试 ID 获取评价
   getEvaluationsByInterview: async (interviewId) => {
     try {
