@@ -29,6 +29,8 @@ import useStore from '../store/useStore';
 import answerService from '../services/answerService';
 import questionService from '../services/questionService';
 import evaluationService from '../services/evaluationService';
+import { API_CONFIG } from '../config/api';
+import request from '../utils/request';
 
 const { Title, Text } = Typography;
 
@@ -46,6 +48,9 @@ const VoiceInterview = () => {
   const { currentInterview, addInterviewRecord } = useStore();
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+  const mediaMimeTypeRef = useRef(''); // 实际使用的音频容器类型
+  const lastFinalAtRef = useRef(0); // 上次最终识别时间，用于断句
+  const backendAsrDisabledRef = useRef(false); // 若发现后端不可用，则后续跳过调用
   const recognitionRef = useRef(null);
   const consoleScrollRef = useRef(null);
   const silenceTimerRef = useRef(null);
@@ -57,6 +62,7 @@ const VoiceInterview = () => {
   const questionIndexRef = useRef(0);
   const questionsRef = useRef([]); // 后端题目缓存
   const currentQuestionIdRef = useRef(null);
+  const currentQuestionRef = useRef(null);
 
   // 根据语言设置面试问题
   const getInterviewQuestions = (language) => {
@@ -125,6 +131,62 @@ const VoiceInterview = () => {
     return questions[language] || questions['zh-CN'];
   };
 
+  // 从题目里抽取关键词，提升识别稳定性
+  function extractKeywords(text) {
+    if (!text) return [];
+    const cleaned = text
+      .replace(/[，。！？、,!.?\-\(\)\[\]{}:;"'`]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const words = cleaned.split(' ');
+    // 过滤过短词与常见虚词
+    const stop = new Set(['的','了','和','是','在','我','你','他','她','它','我们','你们','他们','请','如何','什么','以及','并且','或者']);
+    const result = [];
+    for (const w of words) {
+      if (!w) continue;
+      if (w.length <= 1) continue;
+      if (stop.has(w)) continue;
+      result.push(w);
+    }
+    return result;
+  }
+
+  // 标点与断句增强（启发式）
+  function refineTranscript(existing, added, lang, gapMs) {
+    let text = (existing || '');
+    let fragment = (added || '').trim();
+    if (!fragment) return text;
+
+    // 英文首字母大小写 & 句首大写
+    if (lang.startsWith('en')) {
+      fragment = fragment.replace(/\s+/g, ' ');
+      if (!text || /[\.\?!]$/.test(text.trim())) {
+        fragment = fragment.charAt(0).toUpperCase() + fragment.slice(1);
+      }
+      // 根据末尾停顿补标点
+      if (/[\.!?]$/.test(fragment) === false) {
+        if (gapMs >= 1200) fragment += '.';
+      }
+      return (text + (text ? ' ' : '') + fragment).replace(/\s+([\.!?])/g, '$1');
+    }
+
+    // 中文：合并空格、替换半角标点
+    fragment = fragment
+      .replace(/[\s]+/g, '')
+      .replace(/,/g, '，')
+      .replace(/\./g, '。');
+
+    // 句末标点推断：长停顿或结束词
+    const enders = ['吗','呢','吧','啊','对吧','是不是','好吧'];
+    const endsWithEnder = enders.some(e => fragment.endsWith(e));
+    if (!/[。！？]$/.test(fragment)) {
+      if (gapMs >= 1200 || endsWithEnder) {
+        fragment += endsWithEnder ? '？' : '。';
+      }
+    }
+    return text + fragment;
+  }
+
   useEffect(() => {
     if (!currentInterview) {
       if (!sessionStorage.getItem('setup_tip_shown')) {
@@ -167,7 +229,21 @@ const VoiceInterview = () => {
         recognitionRef.current.continuous = true; // 持续监听，由我们控制停止时机
         recognitionRef.current.interimResults = true;
         recognitionRef.current.lang = currentInterview.language || 'zh-CN';
-        recognitionRef.current.maxAlternatives = 1;
+        recognitionRef.current.maxAlternatives = 8; // 提高备选结果数量，选置信度最高的文本
+
+        // 可用时添加简单语法，强化与当前题目相关词汇
+        try {
+          const SpeechGrammarList = window.SpeechGrammarList || window.webkitSpeechGrammarList;
+          if (SpeechGrammarList && currentQuestionRef.current) {
+            const grams = extractKeywords(currentQuestionRef.current).slice(0, 30).join(' ');
+            const grammar = `#JSGF V1.0; grammar kws; public <kws> = ${grams};`;
+            const list = new SpeechGrammarList();
+            list.addFromString(grammar, 1);
+            recognitionRef.current.grammars = list;
+          }
+        } catch (e) {
+          // 某些浏览器不支持 Grammar，忽略即可
+        }
 
         recognitionRef.current.onstart = () => {
           recognitionStateRef.current = 'running';
@@ -176,22 +252,35 @@ const VoiceInterview = () => {
         };
 
         recognitionRef.current.onresult = (event) => {
-          let finalTranscript = '';
-          let interimTranscript = '';
+          let finalText = '';
+          let interimText = '';
           for (let i = event.resultIndex; i < event.results.length; i++) {
-            if (event.results[i].isFinal) {
-              finalTranscript += event.results[i][0].transcript;
+            const res = event.results[i];
+            if (res.isFinal) {
+              const alts = Array.from(res);
+              const best = alts.sort((a, b) => (b.confidence || 0) - (a.confidence || 0))[0];
+              finalText += best?.transcript || res[0]?.transcript || '';
             } else {
-              interimTranscript += event.results[i][0].transcript;
+              interimText += res[0]?.transcript || '';
             }
           }
-          // 仅累积识别文本，不推进问题
-          if (finalTranscript) {
-            const merged = `${(recognizedTextRef.current || '').trim()} ${finalTranscript}`.trim();
-            recognizedTextRef.current = merged;
-            setRecognizedText(merged);
-          } else if (interimTranscript) {
-            setRecognizedText(`${(recognizedTextRef.current || '').trim()} ${interimTranscript}`.trim());
+
+          // 断句与标点增强
+          if (finalText) {
+            const now = Date.now();
+            const gap = lastFinalAtRef.current ? now - lastFinalAtRef.current : 0;
+            lastFinalAtRef.current = now;
+            const refined = refineTranscript(
+              (recognizedTextRef.current || ''),
+              finalText,
+              currentInterview.language || 'zh-CN',
+              gap
+            );
+            recognizedTextRef.current = refined;
+            setRecognizedText(refined);
+          } else if (interimText) {
+            const preview = `${recognizedTextRef.current || ''}${interimText}`;
+            setRecognizedText(preview);
           }
         };
 
@@ -215,18 +304,11 @@ const VoiceInterview = () => {
         };
 
         recognitionRef.current.onend = () => {
-          console.log('语音识别结束');
-          setIsListening(false);
-          setIsRecording(false);
+          console.log('[VOICE-DEBUG] 浏览器语音识别结束，文本=', recognizedTextRef.current);
           recognitionStateRef.current = 'idle';
           if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-          // 手动停止后统一在这里提交
-          const text = (recognizedTextRef.current || '').trim();
-          if (text) {
-            handleVoiceInput(text);
-          } else {
-            message.warning('未检测到语音，请靠近麦克风后重试');
-          }
+          // 注意：现在主要依赖 MediaRecorder.onstop 处理音频和识别
+          // 这里只是记录浏览器识别结果，实际提交在 MediaRecorder.onstop 中进行
         };
 
         return true;
@@ -299,8 +381,8 @@ const VoiceInterview = () => {
       utterance.onstart = () => setIsPlaying(true);
       utterance.onend = () => {
         setIsPlaying(false);
-        // 仅当播放欢迎语（当前还没有题目）时，进入第一个问题
-        if (interviewStarted && !currentQuestion) {
+        // 仅当播放欢迎语（此时还没有 currentQuestion）时进入第一题
+        if (!currentQuestionRef.current) {
           askNextQuestion();
         }
       };
@@ -310,20 +392,39 @@ const VoiceInterview = () => {
   };
 
   const askNextQuestion = () => {
-    const interviewQuestions = getInterviewQuestions(currentInterview.language || 'zh-CN');
     const index = questionIndexRef.current;
-    if (index < interviewQuestions.length) {
-      const question = interviewQuestions[index];
+    
+    // 优先使用后端问题，如果没有则使用 mock 数据
+    let question = null;
+    let totalQuestions = 0;
+    
+    if (questionsRef.current.length > 0) {
+      // 使用后端问题
+      const backendQuestion = questionsRef.current.find(q => q.question_order === index + 1);
+      if (backendQuestion) {
+        question = backendQuestion.question_text;
+        currentQuestionIdRef.current = backendQuestion.id;
+        totalQuestions = questionsRef.current.length;
+        console.log('[VOICE-DEBUG] 使用后端问题: order=', index + 1, ' id=', backendQuestion.id, ' text=', question.substring(0, 50) + '...');
+      }
+    }
+    
+    if (!question) {
+      // 回退到 mock 数据
+      const interviewQuestions = getInterviewQuestions(currentInterview.language || 'zh-CN');
+      if (index < interviewQuestions.length) {
+        question = interviewQuestions[index];
+        currentQuestionIdRef.current = null;
+        totalQuestions = interviewQuestions.length;
+        console.log('[VOICE-DEBUG] 使用 mock 问题: index=', index, ' text=', question.substring(0, 50) + '...');
+      }
+    }
+    
+    if (question && index < totalQuestions) {
       questionIndexRef.current = index + 1;
       setCurrentQuestion(question);
+      currentQuestionRef.current = question;
       setQuestionCount(questionIndexRef.current);
-      // 绑定当前题目的 question_id（如果已从后端获取）
-      if (questionsRef.current.length) {
-        const match = questionsRef.current.find(q => q.question_order === questionIndexRef.current);
-        currentQuestionIdRef.current = match ? match.id : null;
-      } else {
-        currentQuestionIdRef.current = null;
-      }
       speakText(question);
     } else {
       endInterview();
@@ -376,7 +477,7 @@ const VoiceInterview = () => {
     }, 3000);
   };
 
-  const startRecording = () => {
+  const startRecording = async () => {
     if (recognitionStateRef.current === 'starting' || recognitionStateRef.current === 'running') {
       message.warning('语音识别已在运行中');
       return;
@@ -403,14 +504,73 @@ const VoiceInterview = () => {
         // 忽略停止错误
       }
 
+      // 获取麦克风权限并开始录制音频
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true
+        } 
+      });
+      
+      // 初始化 MediaRecorder 用于录制音频
+      audioChunksRef.current = [];
+      // 选择浏览器支持的最佳容器类型（优先 webm;codecs=opus，其次 ogg;codecs=opus）
+      const candidates = [
+        'audio/webm;codecs=opus',
+        'audio/ogg;codecs=opus',
+        'audio/webm'
+      ];
+      let selectedType = '';
+      if (window.MediaRecorder && typeof MediaRecorder.isTypeSupported === 'function') {
+        selectedType = candidates.find(t => MediaRecorder.isTypeSupported(t)) || '';
+      }
+      mediaMimeTypeRef.current = selectedType;
+      mediaRecorderRef.current = selectedType
+        ? new MediaRecorder(stream, { mimeType: selectedType })
+        : new MediaRecorder(stream);
+      
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+      
+      mediaRecorderRef.current.onstop = async () => {
+        console.log('[VOICE-DEBUG] MediaRecorder 停止，开始处理音频');
+        if (audioChunksRef.current.length > 0) {
+          // 创建音频 Blob
+          const blobType = mediaMimeTypeRef.current || 'audio/webm;codecs=opus';
+          const audioBlob = new Blob(audioChunksRef.current, { type: blobType });
+          console.log('[VOICE-DEBUG] 音频 Blob 大小:', audioBlob.size, 'bytes');
+          
+          // 发送到后端进行 ASR 识别
+          try {
+            await processAudioWithBackend(audioBlob);
+          } catch (error) {
+            console.error('[VOICE-DEBUG] 后端 ASR 失败，使用浏览器识别结果:', error);
+            // 如果后端识别失败，使用浏览器的识别结果
+            const browserResult = recognizedTextRef.current?.trim();
+            if (browserResult) {
+              handleVoiceInput(browserResult);
+            } else {
+              message.warning('语音识别失败，请重新录音');
+            }
+          }
+        }
+      };
+
       // 延迟启动，确保之前的识别已完全停止
       setTimeout(() => {
         try {
           recognitionStateRef.current = 'starting';
+          // 同时启动音频录制和语音识别
+          mediaRecorderRef.current.start();
           recognitionRef.current.start();
           setIsListening(true);
           setIsRecording(true);
-          console.log('开始语音识别，语言:', currentInterview.language);
+          console.log('[VOICE-DEBUG] 开始音频录制和语音识别，语言:', currentInterview.language);
           message.success('开始录音，请说话...');
         } catch (error) {
           console.error('启动录音失败:', error);
@@ -426,7 +586,7 @@ const VoiceInterview = () => {
       }, 200);
     } catch (error) {
       console.error('录音准备失败:', error);
-      message.error('录音准备失败');
+      message.error('录音准备失败，请检查麦克风权限');
       setIsListening(false);
       setIsRecording(false);
       recognitionStateRef.current = 'idle';
@@ -438,12 +598,20 @@ const VoiceInterview = () => {
       if (recognitionRef.current) {
         recognitionStateRef.current = 'stopping';
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+        console.log('[VOICE-DEBUG] stopRecording -> 调用 recognition.stop()');
         recognitionRef.current.stop();
       }
+      
+      // 停止音频录制
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        console.log('[VOICE-DEBUG] stopRecording -> 停止音频录制');
+        mediaRecorderRef.current.stop();
+      }
+      
       setIsListening(false);
       setIsRecording(false);
-      console.log('录音已停止');
-      message.info('录音已停止，正在提交答案...');
+      console.log('[VOICE-DEBUG] 录音已停止, 等待处理音频和识别结果');
+      message.info('录音已停止，正在识别语音...');
     } catch (error) {
       console.error('停止录音失败:', error);
       setIsListening(false);
@@ -452,39 +620,64 @@ const VoiceInterview = () => {
     }
   };
 
+  // 仅通过后端代上传识别：将音频发给 /voice/asr/submit，由后端上传到 TOS 并调用 AUC
+  const processAudioWithBackend = async (audioBlob) => {
+    console.log('[VOICE-DEBUG] 开始后端代上传识别');
+    const formData = new FormData();
+    const mime = mediaMimeTypeRef.current || audioBlob.type || '';
+    const fmt = mime.includes('ogg') || mime.includes('opus') ? 'opus' : (mime.includes('webm') ? 'webm' : 'opus');
+    formData.append('audio', audioBlob, `recording.${fmt}`);
+    formData.append('language', currentInterview.language || 'zh-CN');
+    formData.append('fmt', fmt);
+    const resp = await request.post(`/voice/asr/submit`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      transformRequest: v => v,
+    });
+    const result = resp.data || resp;
+    console.log('[VOICE-DEBUG] 后端代上传识别结果:', result);
+    const recognizedText = result.text?.trim();
+    if (recognizedText) {
+      message.success('语音识别完成');
+      handleVoiceInput(recognizedText);
+      return;
+    }
+    throw new Error('后端代上传返回空结果');
+  };
+
   const handleVoiceInput = async (transcript) => {
-    console.log('识别到的语音:', transcript);
-    // 保存本题答案（若当前无题，则忽略）
-    if (currentQuestion) {
-      setAnswers(prev => ([...prev, { question: currentQuestion, answer: transcript }]));
+    console.log('[VOICE-DEBUG] handleVoiceInput 被调用, transcript=', transcript);
+    // 保存本题答案（基于当前题目ID）
+    if (currentInterview?.id) {
+      setAnswers(prev => ([...prev, { question: currentQuestionRef.current, answer: transcript }]));
       // 异步提交到后端
       try {
-        if (currentInterview?.id) {
-          // 优先使用缓存的当前题ID
-          let questionId = currentQuestionIdRef.current;
-          if (!questionId) {
-            const list = await questionService.getQuestionsByInterview(currentInterview.id);
-            if (Array.isArray(list)) {
-              questionsRef.current = list;
-              const idx = questionIndexRef.current - 1; // 当前题序从1开始
-              if (list[idx]) questionId = list[idx].id;
-            }
-          }
-
-          if (questionId) {
-            await answerService.createAnswer({
-              question_id: questionId,
-              answer_text: transcript,
-              answer_type: 'voice',
-              audio_url: null,
-              duration: null,
-            });
-          } else {
-            console.warn('未找到对应的 question_id，答案未提交');
+        // 优先使用缓存的当前题ID
+        let questionId = currentQuestionIdRef.current;
+        console.log('[VOICE-DEBUG] 提交前 questionId=', questionId, ' questionIndex=', questionIndexRef.current);
+        if (!questionId) {
+          const list = await questionService.getQuestionsByInterview(currentInterview.id);
+          if (Array.isArray(list)) {
+            questionsRef.current = list;
+            const idx = questionIndexRef.current - 1; // 当前题序从1开始
+            if (list[idx]) questionId = list[idx].id;
           }
         }
+
+        if (questionId) {
+          console.log('[VOICE-DEBUG] 发起 POST /answers, question_id=', questionId);
+          await answerService.createAnswer({
+            question_id: questionId,
+            answer_text: transcript,
+            answer_type: 'voice',
+            audio_url: null,
+            duration: null,
+          });
+          console.log('[VOICE-DEBUG] 提交答案成功');
+        } else {
+          console.warn('[VOICE-DEBUG] 未找到对应的 question_id，答案未提交');
+        }
       } catch (e) {
-        console.error('提交答案失败:', e);
+        console.error('[VOICE-DEBUG] 提交答案失败:', e);
         message.error('提交答案失败，但不影响继续下一题');
       }
     }
@@ -493,6 +686,7 @@ const VoiceInterview = () => {
     setRecognizedText('');
     // 清空当前题，避免 TTS 结束时的自动推进误触发
     setCurrentQuestion(null);
+    currentQuestionRef.current = null;
     // 进入下一题
     setTimeout(() => {
       askNextQuestion();
@@ -562,12 +756,12 @@ const VoiceInterview = () => {
                  currentInterview.language === 'ko-KR' ? '답변한 질문:' :
                  '已回答问题：'}
               </Text>
-              <Text>{questionCount} / {getInterviewQuestions(currentInterview.language || 'zh-CN').length}</Text>
+              <Text>{questionCount} / {questionsRef.current.length > 0 ? questionsRef.current.length : getInterviewQuestions(currentInterview.language || 'zh-CN').length}</Text>
             </Space>
           </Col>
           <Col flex="auto">
             <Progress 
-              percent={Math.round((questionCount / getInterviewQuestions(currentInterview.language || 'zh-CN').length) * 100)} 
+              percent={Math.round((questionCount / (questionsRef.current.length > 0 ? questionsRef.current.length : getInterviewQuestions(currentInterview.language || 'zh-CN').length)) * 100)} 
               size="small"
               status={interviewStarted ? 'active' : 'normal'}
             />

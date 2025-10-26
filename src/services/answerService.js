@@ -6,6 +6,7 @@ const answerService = {
   // 创建答案
   createAnswer: async (answerData) => {
     try {
+      // 明确 Content-Type JSON
       const response = await request.post(API_ENDPOINTS.ANSWERS.CREATE, answerData);
       return response;
     } catch (error) {
