@@ -39,7 +39,7 @@ export const API_ENDPOINTS = {
 
   // 答案相关
   ANSWERS: {
-    CREATE: '/answers',
+    CREATE: '/answers/',
     GET_BY_QUESTION: (questionId) => `/answers/question/${questionId}`,
     GET: (id) => `/answers/${id}`,
   },

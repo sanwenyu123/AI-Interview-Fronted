@@ -478,6 +478,11 @@ const VoiceInterview = () => {
   };
 
   const startRecording = async () => {
+    // 播报过程中禁止点击开始录音
+    if (isPlaying) {
+      message.info('请先听完题目播报');
+      return;
+    }
     if (recognitionStateRef.current === 'starting' || recognitionStateRef.current === 'running') {
       message.warning('语音识别已在运行中');
       return;
@@ -665,6 +670,10 @@ const VoiceInterview = () => {
 
         if (questionId) {
           console.log('[VOICE-DEBUG] 发起 POST /answers, question_id=', questionId);
+          // 防止重复提交：发起前再次确认识别状态不在 running
+          if (recognitionStateRef.current === 'running' || recognitionStateRef.current === 'starting') {
+            try { recognitionRef.current && recognitionRef.current.stop(); } catch(_) {}
+          }
           await answerService.createAnswer({
             question_id: questionId,
             answer_text: transcript,
@@ -842,6 +851,7 @@ const VoiceInterview = () => {
                   size="large"
                   icon={<AudioOutlined />}
                   onClick={startRecording}
+                  disabled={isPlaying}
                   style={{ borderRadius: '8px' }}
                 >
                   {currentInterview.language === 'en-US' || currentInterview.language === 'en-GB' ? 'Start Answering' :
