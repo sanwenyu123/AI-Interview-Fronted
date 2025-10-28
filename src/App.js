@@ -10,7 +10,7 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
 import JobSetup from './pages/JobSetup';
-import TextInterview from './pages/TextInterview';
+// import TextInterview from './pages/TextInterview';
 import VoiceInterview from './pages/VoiceInterview';
 import InterviewResult from './pages/InterviewResult';
 import InterviewHistory from './pages/InterviewHistory';
@@ -64,13 +64,7 @@ function App() {
               </ProtectedRoute>
             } />
 
-            <Route path="/text-interview" element={
-              <ProtectedRoute>
-                <Layout>
-                  <TextInterview />
-                </Layout>
-              </ProtectedRoute>
-            } />
+            {/** 文字面试路由已禁用 */}
 
             <Route path="/voice-interview" element={
               <ProtectedRoute>

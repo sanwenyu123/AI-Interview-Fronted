@@ -93,18 +93,7 @@ const Dashboard = () => {
           </Card>
         </Col>
 
-        <Col xs={24} sm={12} lg={6}>
-          <Card
-            hoverable
-            onClick={() => navigate('/text-interview')}
-            style={{ textAlign: 'center', borderRadius: '12px' }}
-            styles={{ body: { padding: '24px' } }}
-          >
-            <EditOutlined style={{ fontSize: '32px', color: '#52c41a', marginBottom: '12px' }} />
-            <Title level={4} style={{ margin: '8px 0' }}>文字面试</Title>
-            <Text type="secondary">通过文字进行面试练习</Text>
-          </Card>
-        </Col>
+        {/* 文字面试入口已移除 */}
 
         <Col xs={24} sm={12} lg={6}>
           <Card
@@ -239,19 +228,6 @@ const Dashboard = () => {
           选择您喜欢的面试方式，开始您的AI面试之旅
         </Text>
         <Space size="large">
-          <Button
-            type="primary"
-            size="large"
-            icon={<EditOutlined />}
-            onClick={() => navigate('/text-interview')}
-            style={{
-              background: 'rgba(255,255,255,0.2)',
-              border: '1px solid rgba(255,255,255,0.3)',
-              color: 'white'
-            }}
-          >
-            文字面试
-          </Button>
           <Button
             type="primary"
             size="large"

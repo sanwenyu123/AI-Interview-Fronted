@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Card,
   Form,
@@ -71,7 +71,7 @@ const JobSetup = () => {
         difficulty: values.difficulty,
         duration: values.duration || 30,
         language: values.interviewLanguage || language,
-        type: 'text',
+        type: 'voice',
       };
 
       const interview = await interviewService.createInterview(interviewData);
@@ -99,8 +99,8 @@ const JobSetup = () => {
       setCurrentInterview(interviewConfig);
       message.success('岗位设置已保存，问题已生成！');
 
-      // 跳转到面试选择页面
-      navigate('/text-interview');
+      // 直接进入语音面试
+      navigate('/voice-interview');
     } catch (error) {
       console.error('保存失败:', error);
       const detail = error?.response?.data?.detail;
@@ -122,6 +122,48 @@ const JobSetup = () => {
       interviewLanguage: language, // 使用当前语言设置
     });
   };
+
+  // 打开页面时预填最近一次岗位设置
+  useEffect(() => {
+    (async () => {
+      try {
+        const list = await interviewService.getInterviews({
+          page: 1,
+          page_size: 1,
+          limit: 1,
+          sort: 'created_at',
+          order: 'desc',
+          order_by: '-created_at',
+        });
+        const items = Array.isArray(list) ? list : (Array.isArray(list?.items) ? list.items : []);
+        const latest = items && items.length > 0 ? items[0] : null;
+        if (latest) {
+          form.setFieldsValue({
+            position: latest.position || '',
+            description: latest.description || '',
+            skills: latest.skills || [],
+            difficulty: latest.difficulty || 'medium',
+            duration: latest.duration || 30,
+            interviewLanguage: latest.language || language,
+          });
+          // 同步全局当前面试配置
+          setCurrentInterview({
+            id: latest.id,
+            position: latest.position,
+            description: latest.description || '',
+            skills: latest.skills || [],
+            difficulty: latest.difficulty,
+            duration: latest.duration,
+            language: latest.language,
+            createdAt: latest.created_at || latest.createdAt,
+          });
+        }
+      } catch (e) {
+        // 失败忽略，不影响用户手动填写
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div>
@@ -310,21 +352,12 @@ const JobSetup = () => {
       <Card style={{ marginTop: '16px', borderRadius: '12px' }}>
         <div style={{ textAlign: 'center' }}>
           <Title level={4} style={{ color: '#1890ff' }}>
-            设置完成后，您可以选择面试方式
+            设置完成后，点击下方按钮开始语音面试
           </Title>
           <Text type="secondary" style={{ display: 'block', marginBottom: '24px' }}>
-            根据您的需求选择文字面试或语音面试
+            系统将基于您的岗位配置生成题目并进入语音面试
           </Text>
           <Space size="large">
-            <Button
-              type="primary"
-              size="large"
-              icon={<EditOutlined />}
-              onClick={() => navigate('/text-interview')}
-              style={{ borderRadius: '8px' }}
-            >
-              开始文字面试
-            </Button>
             <Button
               type="primary"
               size="large"

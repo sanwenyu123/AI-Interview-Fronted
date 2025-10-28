@@ -32,11 +32,7 @@ const Layout = ({ children }) => {
       icon: <EditOutlined />,
       label: '岗位设置',
     },
-    {
-      key: '/text-interview',
-      icon: <EditOutlined />,
-      label: '文字面试',
-    },
+    // 已禁用文字面试入口
     {
       key: '/voice-interview',
       icon: <SoundOutlined />,

@@ -164,8 +164,8 @@ const InterviewHistory = () => {
                     <Title level={5} style={{ margin: 0 }}>
                       {record.position}
                     </Title>
-                    <Tag color={record.type === 'text' ? 'blue' : 'green'}>
-                      {record.type === 'text' ? '文字面试' : '语音面试'}
+                    <Tag color={'green'}>
+                      语音面试
                     </Tag>
                   </div>
                   
@@ -288,7 +288,7 @@ const InterviewHistory = () => {
               <Col span={12}>
                 <Statistic
                   title="面试类型"
-                  value={selectedRecord.type === 'text' ? '文字面试' : '语音面试'}
+                  value={'语音面试'}
                 />
               </Col>
               <Col span={12}>

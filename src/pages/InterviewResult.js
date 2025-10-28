@@ -177,7 +177,7 @@ const InterviewResult = () => {
               <Col xs={12} sm={6}>
                 <Statistic
                   title="面试类型"
-                  value={interviewRecord.type === 'text' ? '文字面试' : '语音面试'}
+                  value={'语音面试'}
                 />
               </Col>
               <Col xs={12} sm={6}>
