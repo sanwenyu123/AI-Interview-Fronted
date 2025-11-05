@@ -76,13 +76,7 @@ const JobSetup = () => {
 
       const interview = await interviewService.createInterview(interviewData);
 
-      // 生成面试问题
-      const questionData = {
-        interview_id: interview.id,
-        num_questions: 5,
-      };
-
-      await questionService.generateQuestions(questionData);
+      // 不在此处生成面试题，改为进入语音面试时生成
 
       // 保存到全局状态
       const interviewConfig = {
@@ -97,7 +91,7 @@ const JobSetup = () => {
       };
 
       setCurrentInterview(interviewConfig);
-      message.success('岗位设置已保存，问题已生成！');
+      message.success('岗位设置已保存！');
 
       // 直接进入语音面试
       navigate('/voice-interview');

@@ -35,6 +35,7 @@ import request from '../utils/request';
 const { Title, Text } = Typography;
 
 const VoiceInterview = () => {
+  const DEFAULT_NUM_QUESTIONS = 5;
   const [isRecording, setIsRecording] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [interviewStarted, setInterviewStarted] = useState(false);
@@ -63,6 +64,10 @@ const VoiceInterview = () => {
   const questionsRef = useRef([]); // 后端题目缓存
   const currentQuestionIdRef = useRef(null);
   const currentQuestionRef = useRef(null);
+  const [totalQuestions, setTotalQuestions] = useState(DEFAULT_NUM_QUESTIONS);
+  const isGeneratingQuestionsRef = useRef(false);
+  const [isGeneratingQuestions, setIsGeneratingQuestions] = useState(false);
+  const waitQuestionsSinceRef = useRef(0);
 
   // 根据语言设置面试问题
   const getInterviewQuestions = (language) => {
@@ -345,17 +350,27 @@ const VoiceInterview = () => {
     questionsRef.current = [];
     currentQuestionIdRef.current = null;
 
-    // 预取问题（从后端）
-    try {
-      if (currentInterview?.id) {
-        const list = await questionService.getQuestionsByInterview(currentInterview.id);
-        if (Array.isArray(list)) {
-          questionsRef.current = list; // [{id, question_text, question_order, ...}]
+    // 异步生成面试题并缓存（不阻塞欢迎语播报）
+    isGeneratingQuestionsRef.current = true;
+    setIsGeneratingQuestions(true);
+    (async () => {
+      try {
+        if (currentInterview?.id) {
+          const payload = { interview_id: currentInterview.id, num_questions: DEFAULT_NUM_QUESTIONS };
+          await questionService.generateQuestions(payload);
+          const list = await questionService.getQuestionsByInterview(currentInterview.id);
+          if (Array.isArray(list) && list.length) {
+            questionsRef.current = list; // [{id, question_text, question_order, ...}]
+            setTotalQuestions(Math.min(list.length, DEFAULT_NUM_QUESTIONS));
+          }
         }
+      } catch (e) {
+        console.warn('生成/获取题目失败，将使用本地题库', e);
+      } finally {
+        isGeneratingQuestionsRef.current = false;
+        setIsGeneratingQuestions(false);
       }
-    } catch (e) {
-      console.warn('预取问题失败，不影响本地流程', e);
-    }
+    })();
 
     const welcomeMessages = {
       'zh-CN': `您好！欢迎参加${currentInterview.position}的语音面试。我是您的AI面试官，接下来我会问您一些问题，请用语音回答。面试预计${currentInterview.duration}分钟，准备好了吗？`,
@@ -367,6 +382,7 @@ const VoiceInterview = () => {
     };
     
     const welcomeMessage = welcomeMessages[currentInterview.language || 'zh-CN'] || welcomeMessages['zh-CN'];
+    // 立即播报欢迎语
     speakText(welcomeMessage);
     setInterviewStarted(true);
   };
@@ -394,17 +410,30 @@ const VoiceInterview = () => {
   const askNextQuestion = () => {
     const index = questionIndexRef.current;
     
+    // 若题目还在后台生成，等待最多 8 秒再回退到本地题库
+    if (questionsRef.current.length === 0 && isGeneratingQuestionsRef.current) {
+      if (!waitQuestionsSinceRef.current) waitQuestionsSinceRef.current = Date.now();
+      if (Date.now() - waitQuestionsSinceRef.current < 8000) {
+        setTimeout(() => askNextQuestion(), 300);
+        return;
+      }
+      // 超时后清零，允许回退
+      waitQuestionsSinceRef.current = 0;
+    }
+
     // 优先使用后端问题，如果没有则使用 mock 数据
     let question = null;
-    let totalQuestions = 0;
+    let localTotal = 0;
     
     if (questionsRef.current.length > 0) {
       // 使用后端问题
-      const backendQuestion = questionsRef.current.find(q => q.question_order === index + 1);
+      const cappedLen = Math.min(questionsRef.current.length, DEFAULT_NUM_QUESTIONS);
+      setTotalQuestions(cappedLen);
+      const backendQuestion = questionsRef.current.find(q => q.question_order === index + 1) || questionsRef.current[index];
       if (backendQuestion) {
         question = backendQuestion.question_text;
         currentQuestionIdRef.current = backendQuestion.id;
-        totalQuestions = questionsRef.current.length;
+        localTotal = cappedLen;
         console.log('[VOICE-DEBUG] 使用后端问题: order=', index + 1, ' id=', backendQuestion.id, ' text=', question.substring(0, 50) + '...');
       }
     }
@@ -412,15 +441,17 @@ const VoiceInterview = () => {
     if (!question) {
       // 回退到 mock 数据
       const interviewQuestions = getInterviewQuestions(currentInterview.language || 'zh-CN');
-      if (index < interviewQuestions.length) {
+      const cappedLen = Math.min(interviewQuestions.length, DEFAULT_NUM_QUESTIONS);
+      setTotalQuestions(cappedLen);
+      if (index < cappedLen) {
         question = interviewQuestions[index];
         currentQuestionIdRef.current = null;
-        totalQuestions = interviewQuestions.length;
+        localTotal = cappedLen;
         console.log('[VOICE-DEBUG] 使用 mock 问题: index=', index, ' text=', question.substring(0, 50) + '...');
       }
     }
     
-    if (question && index < totalQuestions) {
+    if (question && index < localTotal) {
       questionIndexRef.current = index + 1;
       setCurrentQuestion(question);
       currentQuestionRef.current = question;
@@ -736,7 +767,8 @@ const VoiceInterview = () => {
         </Text>
       </div>
 
-      {/* 面试信息卡片 */}
+      {/* 面试信息卡片（仅在开始后显示） */}
+      {interviewStarted && (
       <Card style={{ marginBottom: '16px', borderRadius: '12px' }}>
         <Row gutter={16} align="middle">
           <Col>
@@ -765,18 +797,19 @@ const VoiceInterview = () => {
                  currentInterview.language === 'ko-KR' ? '답변한 질문:' :
                  '已回答问题：'}
               </Text>
-              <Text>{questionCount} / {questionsRef.current.length > 0 ? questionsRef.current.length : getInterviewQuestions(currentInterview.language || 'zh-CN').length}</Text>
+              <Text>{questionCount} / {totalQuestions}</Text>
             </Space>
           </Col>
           <Col flex="auto">
             <Progress 
-              percent={Math.round((questionCount / (questionsRef.current.length > 0 ? questionsRef.current.length : getInterviewQuestions(currentInterview.language || 'zh-CN').length)) * 100)} 
+              percent={Math.round((questionCount / (totalQuestions || DEFAULT_NUM_QUESTIONS)) * 100)} 
               size="small"
               status={interviewStarted ? 'active' : 'normal'}
             />
           </Col>
         </Row>
       </Card>
+      )}
 
       {/* 语音控制区域 */}
       <Card 
