@@ -12,12 +12,16 @@ import {
 import { useNavigate } from 'react-router-dom';
 import useStore from '../store/useStore';
 import interviewService from '../services/interviewService';
+import { useLanguage } from '../contexts/LanguageContext';
+import { t } from '../utils/i18n';
+import SEOHead from '../components/SEOHead';
 
 const { Title, Text } = Typography;
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user } = useStore();
+  const { language } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalInterviews: 0,
@@ -69,12 +73,22 @@ const Dashboard = () => {
 
   return (
     <div>
+      <SEOHead 
+        title={t('dashboard.title', language)}
+        description={t('dashboard.subtitle', language)}
+      />
       <div style={{ marginBottom: '24px' }}>
         <Title level={2} style={{ margin: 0, color: '#1890ff' }}>
-          欢迎回来，{user?.username || '用户'}！
+          {language === 'en-US' ? `Welcome back, ${user?.username || 'User'}!` :
+           language === 'ja-JP' ? `おかえりなさい、${user?.username || 'ユーザー'}さん！` :
+           language === 'ko-KR' ? `환영합니다, ${user?.username || '사용자'}님!` :
+           `欢迎回来，${user?.username || '用户'}！`}
         </Title>
         <Text type="secondary">
-          准备好开始您的AI面试之旅了吗？
+          {language === 'en-US' ? 'Ready to start your AI interview journey?' :
+           language === 'ja-JP' ? 'AI面接の旅を始める準備はできましたか？' :
+           language === 'ko-KR' ? 'AI 면접 여정을 시작할 준비가 되셨나요?' :
+           '准备好开始您的AI面试之旅了吗？'}
         </Text>
       </div>
 
@@ -88,8 +102,8 @@ const Dashboard = () => {
             styles={{ body: { padding: '24px' } }}
           >
             <EditOutlined style={{ fontSize: '32px', color: '#1890ff', marginBottom: '12px' }} />
-            <Title level={4} style={{ margin: '8px 0' }}>岗位设置</Title>
-            <Text type="secondary">设置面试岗位和描述</Text>
+            <Title level={4} style={{ margin: '8px 0' }}>{t('dashboard.jobSetup', language)}</Title>
+            <Text type="secondary">{t('dashboard.jobSetupDesc', language)}</Text>
           </Card>
         </Col>
 
@@ -103,8 +117,8 @@ const Dashboard = () => {
             styles={{ body: { padding: '24px' } }}
           >
             <SoundOutlined style={{ fontSize: '32px', color: '#fa8c16', marginBottom: '12px' }} />
-            <Title level={4} style={{ margin: '8px 0' }}>语音面试</Title>
-            <Text type="secondary">真实语音对话面试</Text>
+            <Title level={4} style={{ margin: '8px 0' }}>{t('dashboard.startVoiceInterview', language)}</Title>
+            <Text type="secondary">{t('dashboard.voiceInterviewDesc', language)}</Text>
           </Card>
         </Col>
 
@@ -116,8 +130,8 @@ const Dashboard = () => {
             styles={{ body: { padding: '24px' } }}
           >
             <HistoryOutlined style={{ fontSize: '32px', color: '#722ed1', marginBottom: '12px' }} />
-            <Title level={4} style={{ margin: '8px 0' }}>面试记录</Title>
-            <Text type="secondary">查看历史面试记录</Text>
+            <Title level={4} style={{ margin: '8px 0' }}>{t('dashboard.viewHistory', language)}</Title>
+            <Text type="secondary">{t('dashboard.historyDesc', language)}</Text>
           </Card>
         </Col>
       </Row>
@@ -125,18 +139,21 @@ const Dashboard = () => {
       <Row gutter={[16, 16]}>
         {/* 统计信息 */}
         <Col xs={24} lg={12}>
-          <Card title="面试统计" style={{ borderRadius: '12px' }}>
+          <Card title={t('dashboard.interviewStats', language)} style={{ borderRadius: '12px' }}>
             <Row gutter={16}>
               <Col span={12}>
                 <Statistic
-                  title="总面试次数"
+                  title={t('dashboard.totalInterviews', language)}
                   value={stats.totalInterviews}
                   prefix={<UserOutlined />}
                 />
               </Col>
               <Col span={12}>
                 <Statistic
-                  title="完成次数"
+                  title={language === 'en-US' ? 'Completed' :
+                         language === 'ja-JP' ? '完了回数' :
+                         language === 'ko-KR' ? '완료 횟수' :
+                         '完成次数'}
                   value={stats.completedInterviews}
                   prefix={<TrophyOutlined />}
                 />
@@ -145,16 +162,19 @@ const Dashboard = () => {
             <Row gutter={16} style={{ marginTop: '16px' }}>
               <Col span={12}>
                 <Statistic
-                  title="平均分数"
+                  title={t('dashboard.averageScore', language)}
                   value={stats.averageScore}
                   suffix="/ 100"
                 />
               </Col>
               <Col span={12}>
                 <Statistic
-                  title="总练习时间"
+                  title={language === 'en-US' ? 'Total Practice Time' :
+                         language === 'ja-JP' ? '総練習時間' :
+                         language === 'ko-KR' ? '총 연습 시간' :
+                         '总练习时间'}
                   value={Math.round(stats.totalTime / 60)}
-                  suffix="分钟"
+                  suffix={language === 'en-US' ? 'min' : language === 'ja-JP' ? '分' : language === 'ko-KR' ? '분' : '分钟'}
                   prefix={<ClockCircleOutlined />}
                 />
               </Col>
@@ -164,7 +184,7 @@ const Dashboard = () => {
 
         {/* 最近面试记录 */}
         <Col xs={24} lg={12}>
-          <Card title="最近面试" style={{ borderRadius: '12px' }}>
+          <Card title={t('dashboard.recentActivity', language)} style={{ borderRadius: '12px' }}>
             {recentInterviews.length > 0 ? (
               <div>
                 {recentInterviews.map((interview, index) => (
@@ -174,37 +194,56 @@ const Dashboard = () => {
                   }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
-                        <Text strong>{interview.position || '未知岗位'}</Text>
+                        <Text strong>{interview.position || (language === 'en-US' ? 'Unknown Position' :
+                                                              language === 'ja-JP' ? '不明な職種' :
+                                                              language === 'ko-KR' ? '알 수 없는 직무' :
+                                                              '未知岗位')}</Text>
                         <br />
                         <Text type="secondary" style={{ fontSize: '12px' }}>
-                          {interview.date || '未知日期'}
+                          {interview.date || (language === 'en-US' ? 'Unknown Date' :
+                                              language === 'ja-JP' ? '不明な日付' :
+                                              language === 'ko-KR' ? '알 수 없는 날짜' :
+                                              '未知日期')}
                         </Text>
                       </div>
                       <div style={{ textAlign: 'right' }}>
                         <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1890ff' }}>
                           {interview.score || 0}
                         </div>
-                        <Text type="secondary" style={{ fontSize: '12px' }}>分</Text>
+                        <Text type="secondary" style={{ fontSize: '12px' }}>
+                          {language === 'en-US' ? 'pts' : language === 'ja-JP' ? '点' : language === 'ko-KR' ? '점' : '分'}
+                        </Text>
                       </div>
                     </div>
                   </div>
                 ))}
                 <div style={{ textAlign: 'center', marginTop: '16px' }}>
                   <Button type="link" onClick={() => navigate('/interview-history')}>
-                    查看全部记录
+                    {language === 'en-US' ? 'View All Records' :
+                     language === 'ja-JP' ? '全記録を見る' :
+                     language === 'ko-KR' ? '모든 기록 보기' :
+                     '查看全部记录'}
                   </Button>
                 </div>
               </div>
             ) : (
               <div style={{ textAlign: 'center', padding: '40px 0' }}>
-                <Text type="secondary">还没有面试记录</Text>
+                <Text type="secondary">
+                  {language === 'en-US' ? 'No interview records yet' :
+                   language === 'ja-JP' ? 'まだ面接記録がありません' :
+                   language === 'ko-KR' ? '아직 면접 기록이 없습니다' :
+                   '还没有面试记录'}
+                </Text>
                 <br />
                 <Button
                   type="primary"
                   onClick={() => navigate('/job-setup')}
                   style={{ marginTop: '16px' }}
                 >
-                  开始第一次面试
+                  {language === 'en-US' ? 'Start First Interview' :
+                   language === 'ja-JP' ? '最初の面接を開始' :
+                   language === 'ko-KR' ? '첫 번째 면접 시작' :
+                   '开始第一次面试'}
                 </Button>
               </div>
             )}

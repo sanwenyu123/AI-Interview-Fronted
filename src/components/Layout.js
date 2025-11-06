@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Layout as AntLayout, Menu, Avatar, Dropdown, Button, Space } from 'antd';
+import { Layout as AntLayout, Menu, Avatar, Dropdown, Button, Space, Select } from 'antd';
 import { 
   HomeOutlined, 
   SettingOutlined, 
@@ -8,10 +8,13 @@ import {
   MenuOutlined,
   HistoryOutlined,
   SoundOutlined,
-  EditOutlined
+  EditOutlined,
+  GlobalOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import useStore from '../store/useStore';
+import { useLanguage } from '../contexts/LanguageContext';
+import { t } from '../utils/i18n';
 
 const { Header, Sider, Content } = AntLayout;
 
@@ -20,33 +23,34 @@ const Layout = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useStore();
+  const { language, changeLanguage } = useLanguage();
 
   const menuItems = [
     {
       key: '/',
       icon: <HomeOutlined />,
-      label: '首页',
+      label: t('nav.dashboard', language),
     },
     {
       key: '/job-setup',
       icon: <EditOutlined />,
-      label: '岗位设置',
+      label: t('nav.jobSetup', language),
     },
     // 已禁用文字面试入口
     {
       key: '/voice-interview',
       icon: <SoundOutlined />,
-      label: '语音面试',
+      label: t('nav.voiceInterview', language),
     },
     {
       key: '/interview-history',
       icon: <HistoryOutlined />,
-      label: '面试记录',
+      label: t('nav.interviewHistory', language),
     },
     {
       key: '/settings',
       icon: <SettingOutlined />,
-      label: '设置',
+      label: t('nav.settings', language),
     },
   ];
 
@@ -95,7 +99,7 @@ const Layout = ({ children }) => {
             fontSize: collapsed ? '16px' : '20px',
             transition: 'all 0.2s'
           }}>
-            {collapsed ? 'AI' : 'AI面试助手'}
+            {collapsed ? t('app.shortTitle', language) : t('app.title', language)}
           </h2>
         </div>
         
@@ -125,7 +129,26 @@ const Layout = ({ children }) => {
           />
           
           <Space>
-            <span style={{ color: '#666' }}>欢迎，{user?.username || '用户'}</span>
+            {/* 语言切换器 */}
+            <Select
+              value={language}
+              onChange={changeLanguage}
+              style={{ width: 120 }}
+              size="small"
+              suffixIcon={<GlobalOutlined />}
+              options={[
+                { value: 'zh-CN', label: t('language.zh-CN', language) },
+                { value: 'en-US', label: t('language.en-US', language) },
+                { value: 'ja-JP', label: t('language.ja-JP', language) },
+                { value: 'ko-KR', label: t('language.ko-KR', language) },
+              ]}
+            />
+            <span style={{ color: '#666' }}>
+              {language === 'en-US' ? `Welcome, ${user?.username || 'User'}` :
+               language === 'ja-JP' ? `ようこそ、${user?.username || 'ユーザー'}さん` :
+               language === 'ko-KR' ? `환영합니다, ${user?.username || '사용자'}님` :
+               `欢迎，${user?.username || '用户'}`}
+            </span>
             <Dropdown
               menu={{ items: userMenuItems }}
               placement="bottomRight"

@@ -51,6 +51,19 @@ export const API_ENDPOINTS = {
     GET_BY_INTERVIEW: (interviewId) => `/evaluations/interview/${interviewId}`,
     GET: (id) => `/evaluations/${id}`,
   },
+
+  // 简历相关
+  RESUMES: {
+    UPLOAD: '/resumes/upload',
+    ANALYZE: '/resumes/analyze',
+    GET: (id) => `/resumes/${id}`,
+  },
+
+  // 设置相关
+  SETTINGS: {
+    GET: '/settings',
+    UPDATE: '/settings',
+  },
 };
 
 // 获取完整的 API URL

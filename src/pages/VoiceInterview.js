@@ -28,6 +28,9 @@ import { useNavigate } from 'react-router-dom';
 import useStore from '../store/useStore';
 import answerService from '../services/answerService';
 import questionService from '../services/questionService';
+import { useLanguage } from '../contexts/LanguageContext';
+import { t } from '../utils/i18n';
+import SEOHead from '../components/SEOHead';
 import evaluationService from '../services/evaluationService';
 import { API_CONFIG } from '../config/api';
 import request from '../utils/request';
@@ -35,6 +38,7 @@ import request from '../utils/request';
 const { Title, Text } = Typography;
 
 const VoiceInterview = () => {
+  const { language } = useLanguage();
   const DEFAULT_NUM_QUESTIONS = 5;
   const [isRecording, setIsRecording] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -752,17 +756,21 @@ const VoiceInterview = () => {
 
   return (
     <div>
+      <SEOHead 
+        title={`${t('voiceInterview.title', language)} - ${currentInterview.position}`}
+        description={language === 'en-US' || language === 'en-GB' ? 'Have a voice conversation with the AI interviewer to experience a real interview scenario' :
+                     language === 'ja-JP' ? 'AI面接官と音声で対話し、実際の面接シーンを体験してください' :
+                     language === 'ko-KR' ? 'AI 면접관과 음성으로 대화하여 실제 면접 상황을 경험하세요' :
+                     '与AI面试官进行语音对话，体验真实的面试场景'}
+      />
       <div style={{ marginBottom: '24px' }}>
         <Title level={2} style={{ margin: 0, color: '#1890ff' }}>
-          {currentInterview.language === 'en-US' || currentInterview.language === 'en-GB' ? 'Voice Interview - ' :
-           currentInterview.language === 'ja-JP' ? '音声面接 - ' :
-           currentInterview.language === 'ko-KR' ? '음성 면접 - ' :
-           '语音面试 - '}{currentInterview.position}
+          {t('voiceInterview.title', language)} - {currentInterview.position}
         </Title>
         <Text type="secondary">
-          {currentInterview.language === 'en-US' || currentInterview.language === 'en-GB' ? 'Have a voice conversation with the AI interviewer to experience a real interview scenario' :
-           currentInterview.language === 'ja-JP' ? 'AI面接官と音声で対話し、実際の面接シーンを体験してください' :
-           currentInterview.language === 'ko-KR' ? 'AI 면접관과 음성으로 대화하여 실제 면접 상황을 경험하세요' :
+          {language === 'en-US' || language === 'en-GB' ? 'Have a voice conversation with the AI interviewer to experience a real interview scenario' :
+           language === 'ja-JP' ? 'AI面接官と音声で対話し、実際の面接シーンを体験してください' :
+           language === 'ko-KR' ? 'AI 면접관과 음성으로 대화하여 실제 면접 상황을 경험하세요' :
            '与AI面试官进行语音对话，体验真实的面试场景'}
         </Text>
       </div>

@@ -2,7 +2,11 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
+import enUS from 'antd/locale/en_US';
+import jaJP from 'antd/locale/ja_JP';
+import koKR from 'antd/locale/ko_KR';
 import useStore from './store/useStore';
+import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 
 // 页面组件
 import Login from './pages/Login';
@@ -17,6 +21,7 @@ import InterviewHistory from './pages/InterviewHistory';
 
 // 布局组件
 import Layout from './components/Layout';
+import SEOHead from './components/SEOHead';
 
 // 受保护的路由组件
 const ProtectedRoute = ({ children }) => {
@@ -24,9 +29,28 @@ const ProtectedRoute = ({ children }) => {
   return isAuthenticated ? children : <Navigate to="/login" />;
 };
 
-function App() {
+// 应用内容组件（需要在LanguageProvider内部使用useLanguage）
+const AppContent = () => {
+  const { language } = useLanguage();
+  
+  // 根据语言设置Ant Design的locale
+  const getAntdLocale = () => {
+    switch (language) {
+      case 'en-US':
+      case 'en-GB':
+        return enUS;
+      case 'ja-JP':
+        return jaJP;
+      case 'ko-KR':
+        return koKR;
+      default:
+        return zhCN;
+    }
+  };
+
   return (
-    <ConfigProvider locale={zhCN}>
+    <ConfigProvider locale={getAntdLocale()}>
+      <SEOHead />
       <Router
         future={{
           v7_startTransition: true,
@@ -96,6 +120,14 @@ function App() {
         </div>
       </Router>
     </ConfigProvider>
+  );
+};
+
+function App() {
+  return (
+    <LanguageProvider>
+      <AppContent />
+    </LanguageProvider>
   );
 }
 
